@@ -245,8 +245,71 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             APP_ERROR_CHECK(err_code);
         } break;
 
+        case BLE_GAP_EVT_CONN_PARAM_UPDATE:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_CONN_PARAM_UPDATE\n");
+        break;
+
+        case BLE_GAP_EVT_SEC_PARAMS_REQUEST:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_SEC_PARAMS_REQUEST\n");
+        break;
+
+        case BLE_GAP_EVT_SEC_INFO_REQUEST:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_SEC_INFO_REQUEST\n");
+        break;
+
+        case BLE_GAP_EVT_PASSKEY_DISPLAY:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_PASSKEY_DISPLAY\n");
+        break;
+
+        case BLE_GAP_EVT_KEY_PRESSED:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_KEY_PRESSED\n");
+        break;
+
+        case BLE_GAP_EVT_AUTH_KEY_REQUEST:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_AUTH_KEY_REQUEST\n");
+        break;
+
+        case BLE_GAP_EVT_LESC_DHKEY_REQUEST:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_LESC_DHKEY_REQUEST\n");
+        break;
+
+        case BLE_GAP_EVT_AUTH_STATUS :
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_AUTH_STATUS\n");
+        break;
+
+        case BLE_GAP_EVT_CONN_SEC_UPDATE:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_CONN_SEC_UPDATE\n");
+        break;
+
+        case BLE_GAP_EVT_RSSI_CHANGED:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_RSSI_CHANGED\n");
+        break;
+
+        case BLE_GAP_EVT_ADV_REPORT:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_ADV_REPORT\n");
+        break;
+
+        case BLE_GAP_EVT_SEC_REQUEST:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_SEC_REQUEST\n");
+        break;
+        
+        case BLE_GAP_EVT_SCAN_REQ_REPORT:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_SCAN_REQ_REPORT\n");
+        break;
+
+        case BLE_GAP_EVT_DATA_LENGTH_UPDATE_REQUEST:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_DATA_LENGTH_UPDATE_REQUEST\n");
+        break;
+
+        case BLE_GAP_EVT_DATA_LENGTH_UPDATE:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_DATA_LENGTH_UPDATE\n");
+        break;
+
+        case BLE_GAP_EVT_QOS_CHANNEL_SURVEY_REPORT:
+            NRF_LOG_RAW_INFO("BLE_GAP_EVT_QOS_CHANNEL_SURVEY_REPORT\n");
+        break;
+
         default:
-            // No implementation needed.
             break;
     }
 }
