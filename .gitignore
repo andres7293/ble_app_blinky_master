@@ -3,3 +3,6 @@
 *.c.d
 *.hex
 *.out
+*.bin
+*.in
+*.map
