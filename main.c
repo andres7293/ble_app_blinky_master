@@ -93,10 +93,24 @@ NRF_BLE_GATT_DEF(m_gatt);                                       /**< GATT module
 BLE_DB_DISCOVERY_DEF(m_db_disc);                                /**< DB discovery module instance. */
 
 static char const m_target_periph_name[] = "Nordic_Blinky";     /**< Name of the device we try to connect to. This name is searched in the scan report data*/
+//static char const periph_uuid[] = "000015231212efde1523785feabcd123";
+static char const periph_uuid[] = "23D1BCEA5F782315DEEF121223150000";
 
 const nrf_drv_timer_t TIMER_LED = NRF_DRV_TIMER_INSTANCE(1);
 
 uint8_t ledStatus = 0;
+
+typedef struct __attribute__((packed)) {
+    uint8_t header;
+    uint8_t address[6];
+    uint8_t payload[37];
+} adv_payload_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t adv_len;
+    uint8_t adv_type;
+    uint8_t data[37];
+} adv_data_t;
 
 /**@brief Function to handle asserts in the SoftDevice.
  *
@@ -183,12 +197,14 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
         case BLE_GAP_EVT_CONNECTED:
         {
             NRF_LOG_RAW_INFO("BLE_GAP_EVT_CONNECTED\n");
+            NRF_LOG_RAW_INFO("handle = 0x%X\n", p_gap_evt->conn_handle);
             err_code = ble_lbs_c_handles_assign(&m_ble_lbs_c, p_gap_evt->conn_handle, NULL);
             APP_ERROR_CHECK(err_code);
 
             err_code = ble_db_discovery_start(&m_db_disc, p_gap_evt->conn_handle);
             APP_ERROR_CHECK(err_code);
-        } break;
+        } 
+        break;
 
         // Upon disconnection, reset the connection handle of the peer which disconnected, update
         // the LEDs status and start scanning again.
@@ -285,8 +301,62 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             NRF_LOG_RAW_INFO("BLE_GAP_EVT_RSSI_CHANGED\n");
         break;
 
-        case BLE_GAP_EVT_ADV_REPORT:
+        case BLE_GAP_EVT_ADV_REPORT: {
+            //advertising report. Get remote rssi value
+            const ble_gap_evt_adv_report_t *p_adv_report = &p_gap_evt->params.adv_report;
+            uint8_t rssi = p_adv_report->rssi;
+            uint8_t *data = p_adv_report->data.p_data;
+            uint16_t len = p_adv_report->data.len;
+
+            if (p_adv_report->type.status != BLE_GAP_ADV_DATA_STATUS_INCOMPLETE_MORE_DATA) {
+                adv_payload_t *adv = (adv_payload_t *) data;
+                adv_data_t *ad = (adv_data_t *) adv->payload;
+                if (p_adv_report->type.scan_response == 0) {
+                    if (ad->adv_type == 0x09) { 
+                        //complete local name
+                        int ret = memcmp(ad->data, m_target_periph_name, ad->adv_len - 1);
+                        if (ret == 0) {
+                            //device name founded
+                            ble_gap_scan_params_t scan_params;
+                            ble_gap_conn_params_t conn_params;
+
+                            memset(&scan_params, 0, sizeof(ble_gap_scan_params_t));
+                            scan_params.interval = SCAN_INTERVAL;
+                            scan_params.window = SCAN_WINDOW;
+                            scan_params.timeout = SCAN_DURATION;
+
+                            memset(&conn_params, 0, sizeof(ble_gap_conn_params_t));
+                            conn_params.min_conn_interval = MIN_CONNECTION_INTERVAL;
+                            conn_params.max_conn_interval = MAX_CONNECTION_INTERVAL;
+                            conn_params.slave_latency = SLAVE_LATENCY;
+                            conn_params.conn_sup_timeout = SUPERVISION_TIMEOUT;
+                            
+                            NRF_LOG_RAW_INFO("rssi = %i\n", p_adv_report->rssi);
+                            /*
+                            if (p_adv_report->rssi < -80) {
+                                break;
+                            }
+                            */
+                            uint32_t ret = sd_ble_gap_connect((ble_gap_addr_t const *)&p_adv_report->peer_addr, 
+                                (ble_gap_scan_params_t const *)&scan_params, 
+                                (ble_gap_conn_params_t const *)&conn_params, APP_BLE_CONN_CFG_TAG);
+                            if (ret != NRF_SUCCESS) {
+                                NRF_LOG_RAW_INFO("sd_ble_gap_connect error\n");
+                            }
+                        }
+                    }
+                }
+                else if (p_adv_report->type.scan_response == 1) {
+                    //check uuid on scan response
+                    ad = (adv_data_t *) data;
+                    if (ad->adv_type == 0x07) {
+                        //complete list of 128-bit uuid
+                        //check uuid
+                    }
+                }
+            }
             NRF_LOG_RAW_INFO("BLE_GAP_EVT_ADV_REPORT\n");
+        }
         break;
 
         case BLE_GAP_EVT_SEC_REQUEST:
@@ -318,12 +388,11 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
  */
 static void lbs_c_init(void)
 {
-    ret_code_t       err_code;
     ble_lbs_c_init_t lbs_c_init_obj;
 
     lbs_c_init_obj.evt_handler = lbs_c_evt_handler;
 
-    err_code = ble_lbs_c_init(&m_ble_lbs_c, &lbs_c_init_obj);
+    ret_code_t err_code = ble_lbs_c_init(&m_ble_lbs_c, &lbs_c_init_obj);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -505,7 +574,7 @@ static void scan_init(void)
 
     memset(&init_scan, 0, sizeof(init_scan));
 
-    init_scan.connect_if_match = true;
+    init_scan.connect_if_match = false;
     init_scan.conn_cfg_tag     = APP_BLE_CONN_CFG_TAG;
 
     err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
@@ -578,7 +647,7 @@ int main(void)
     config_led_timer();
     
     // Start execution.
-    NRF_LOG_RAW_INFO("Blinky CENTRAL example started.");
+    NRF_LOG_RAW_INFO("Blinky CENTRAL example started.\n");
     scan_start();
 
     bsp_board_led_off(BSP_BOARD_LED_0);
