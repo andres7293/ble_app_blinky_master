@@ -112,6 +112,13 @@ typedef struct __attribute__((packed)) {
     uint8_t data[37];
 } adv_data_t;
 
+#define MAX_RSSI_BUFF_SIZE     25
+#define RSSI_THRESHOLD         -40
+int8_t rssi_buff[MAX_RSSI_BUFF_SIZE];
+int index = 0;
+
+int8_t calcMode (int8_t *rssi, int len);
+
 /**@brief Function to handle asserts in the SoftDevice.
  *
  * @details This function will be called in case of an assert in the SoftDevice.
@@ -304,7 +311,6 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
         case BLE_GAP_EVT_ADV_REPORT: {
             //advertising report. Get remote rssi value
             const ble_gap_evt_adv_report_t *p_adv_report = &p_gap_evt->params.adv_report;
-            uint8_t rssi = p_adv_report->rssi;
             uint8_t *data = p_adv_report->data.p_data;
             uint16_t len = p_adv_report->data.len;
 
@@ -331,12 +337,16 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
                             conn_params.slave_latency = SLAVE_LATENCY;
                             conn_params.conn_sup_timeout = SUPERVISION_TIMEOUT;
                             
-                            NRF_LOG_RAW_INFO("rssi = %i\n", p_adv_report->rssi);
-                            /*
-                            if (p_adv_report->rssi < -80) {
-                                break;
-                            }
-                            */
+                            rssi_buff[index++] = p_adv_report->rssi;
+                            if (index < MAX_RSSI_BUFF_SIZE)
+                                return;
+                            int8_t mode = calcMode(rssi_buff, MAX_RSSI_BUFF_SIZE);
+                            index = 0;
+                            NRF_LOG_RAW_INFO("rssi mode = %i\n", mode);
+
+                            if (p_adv_report->rssi <= RSSI_THRESHOLD)
+                                return;
+
                             uint32_t ret = sd_ble_gap_connect((ble_gap_addr_t const *)&p_adv_report->peer_addr, 
                                 (ble_gap_scan_params_t const *)&scan_params, 
                                 (ble_gap_conn_params_t const *)&conn_params, APP_BLE_CONN_CFG_TAG);
@@ -355,7 +365,7 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
                     }
                 }
             }
-            NRF_LOG_RAW_INFO("BLE_GAP_EVT_ADV_REPORT\n");
+            //NRF_LOG_RAW_INFO("BLE_GAP_EVT_ADV_REPORT\n");
         }
         break;
 
@@ -471,7 +481,7 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
             APP_ERROR_CHECK(err_code);
             break;
         case NRF_BLE_SCAN_EVT_FILTER_MATCH:
-            NRF_LOG_RAW_INFO("NRF_BLE_SCAN_EVT_FILTER_MATCH\n");
+            //NRF_LOG_RAW_INFO("NRF_BLE_SCAN_EVT_FILTER_MATCH\n");
         break;
 
         case NRF_BLE_SCAN_EVT_WHITELIST_REQUEST:
@@ -483,7 +493,7 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
         break;
 
         case NRF_BLE_SCAN_EVT_NOT_FOUND:
-            NRF_LOG_RAW_INFO("NRF_BLE_SCAN_EVT_NOT_FOUND\n");
+            //NRF_LOG_RAW_INFO("NRF_BLE_SCAN_EVT_NOT_FOUND\n");
         break;
 
         case NRF_BLE_SCAN_EVT_SCAN_TIMEOUT:
@@ -629,6 +639,24 @@ void config_led_timer (void) {
     APP_ERROR_CHECK(err_code);
     time_ticks = nrf_drv_timer_ms_to_ticks(&TIMER_LED, time_ms);
     nrf_drv_timer_extended_compare(&TIMER_LED, NRF_TIMER_CC_CHANNEL0, time_ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, true);
+}
+
+int8_t calcMode (int8_t *rssi, int len) {
+  int8_t maxValue = 0, maxCount = 0, i, j;
+   for (i = 0; i < len; ++i) {
+      int8_t count = 0;
+      
+      for (j = 0; j < len; ++j) {
+         if (rssi[j] == rssi[i])
+         ++count;
+      }
+      
+      if (count > maxCount) {
+         maxCount = count;
+         maxValue = rssi[i];
+      }
+   }
+   return maxValue;
 }
 
 int main(void)
