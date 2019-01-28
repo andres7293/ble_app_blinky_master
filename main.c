@@ -87,13 +87,19 @@
 #define APP_BLE_CONN_CFG_TAG            1                                   /**< A tag identifying the SoftDevice BLE configuration. */
 #define APP_BLE_OBSERVER_PRIO           3                                   /**< Application's BLE observer priority. You shouldn't need to modify this value. */
 
+
+//Blink master configuration
+#define MAX_RSSI_BUFF_SIZE          25
+#define RSSI_THRESHOLD              -50
+#define DISCONNECTION_RSSI_THRESHOLD              -60
+#define BLINK_TIME_INTERVAL_MS      500
+
 NRF_BLE_SCAN_DEF(m_scan);                                       /**< Scanning module instance. */
 BLE_LBS_C_DEF(m_ble_lbs_c);                                     /**< Main structure used by the LBS client module. */
 NRF_BLE_GATT_DEF(m_gatt);                                       /**< GATT module instance. */
 BLE_DB_DISCOVERY_DEF(m_db_disc);                                /**< DB discovery module instance. */
 
 static char const m_target_periph_name[] = "Nordic_Blinky";     /**< Name of the device we try to connect to. This name is searched in the scan report data*/
-//static char const periph_uuid[] = "000015231212efde1523785feabcd123";
 static char const periph_uuid[] = "23D1BCEA5F782315DEEF121223150000";
 
 const nrf_drv_timer_t TIMER_LED = NRF_DRV_TIMER_INSTANCE(1);
@@ -112,10 +118,8 @@ typedef struct __attribute__((packed)) {
     uint8_t data[37];
 } adv_data_t;
 
-#define MAX_RSSI_BUFF_SIZE     25
-#define RSSI_THRESHOLD         -40
-int8_t rssi_buff[MAX_RSSI_BUFF_SIZE];
-int index = 0;
+int8_t rssi_filter_buff[MAX_RSSI_BUFF_SIZE];
+int rssi_filter_counter = 0;
 
 int8_t calcMode (int8_t *rssi, int len);
 
@@ -209,6 +213,13 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             APP_ERROR_CHECK(err_code);
 
             err_code = ble_db_discovery_start(&m_db_disc, p_gap_evt->conn_handle);
+            APP_ERROR_CHECK(err_code);
+            //start receive rssi during connection
+            err_code = sd_ble_gap_rssi_start(p_gap_evt->conn_handle, 5, 1);
+            //reset filter counter
+            rssi_filter_counter = 0;
+            //delete previous rssi
+            rssi_filter_counter = 0;
             APP_ERROR_CHECK(err_code);
         } 
         break;
@@ -306,6 +317,20 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
 
         case BLE_GAP_EVT_RSSI_CHANGED:
             NRF_LOG_RAW_INFO("BLE_GAP_EVT_RSSI_CHANGED\n");
+            int8_t connectionRSSI;
+            uint8_t channelrssi_filter_counter;
+            uint32_t err_code = sd_ble_gap_rssi_get(p_ble_evt->evt.gatts_evt.conn_handle, &connectionRSSI, &channelrssi_filter_counter);
+            APP_ERROR_CHECK(err_code);
+            rssi_filter_buff[rssi_filter_counter++] = connectionRSSI;
+            if (rssi_filter_counter < MAX_RSSI_BUFF_SIZE)
+                return;
+            int mode = calcMode(rssi_filter_buff, rssi_filter_counter);
+            rssi_filter_counter = 0;
+            NRF_LOG_RAW_INFO("connectionRSSI = %i\n", mode);
+            if (mode <= RSSI_THRESHOLD) {
+                NRF_LOG_RAW_INFO("Disconnecting from slave, too far away\n");
+                err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gattc_evt.conn_handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+            }
         break;
 
         case BLE_GAP_EVT_ADV_REPORT: {
@@ -337,22 +362,18 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
                             conn_params.slave_latency = SLAVE_LATENCY;
                             conn_params.conn_sup_timeout = SUPERVISION_TIMEOUT;
                             
-                            rssi_buff[index++] = p_adv_report->rssi;
-                            if (index < MAX_RSSI_BUFF_SIZE)
+                            rssi_filter_buff[rssi_filter_counter++] = p_adv_report->rssi;
+                            if (rssi_filter_counter < MAX_RSSI_BUFF_SIZE)
                                 return;
-                            int8_t mode = calcMode(rssi_buff, MAX_RSSI_BUFF_SIZE);
-                            index = 0;
+                            int8_t mode = calcMode(rssi_filter_buff, MAX_RSSI_BUFF_SIZE);
+                            rssi_filter_counter = 0;
                             NRF_LOG_RAW_INFO("rssi mode = %i\n", mode);
-
                             if (p_adv_report->rssi <= RSSI_THRESHOLD)
                                 return;
 
                             uint32_t ret = sd_ble_gap_connect((ble_gap_addr_t const *)&p_adv_report->peer_addr, 
                                 (ble_gap_scan_params_t const *)&scan_params, 
                                 (ble_gap_conn_params_t const *)&conn_params, APP_BLE_CONN_CFG_TAG);
-                            if (ret != NRF_SUCCESS) {
-                                NRF_LOG_RAW_INFO("sd_ble_gap_connect error\n");
-                            }
                         }
                     }
                 }
@@ -625,7 +646,6 @@ void timer_led_event_handler(nrf_timer_event_t event_type, void* p_context)
 void config_led_timer (void) {
     // Turn on the LED to signal scanning.
     //bsp_board_led_on(CENTRAL_SCANNING_LED);
-    uint32_t time_ms = 500; //Time(in miliseconds) between consecutive compare events.
     uint32_t time_ticks;
     uint32_t err_code = NRF_SUCCESS;
 
@@ -637,7 +657,7 @@ void config_led_timer (void) {
     err_code = nrf_drv_timer_init(&TIMER_LED, &timer_cfg, timer_led_event_handler);
 
     APP_ERROR_CHECK(err_code);
-    time_ticks = nrf_drv_timer_ms_to_ticks(&TIMER_LED, time_ms);
+    time_ticks = nrf_drv_timer_ms_to_ticks(&TIMER_LED, BLINK_TIME_INTERVAL_MS);
     nrf_drv_timer_extended_compare(&TIMER_LED, NRF_TIMER_CC_CHANNEL0, time_ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, true);
 }
 
